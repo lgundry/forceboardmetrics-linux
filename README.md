@@ -20,7 +20,6 @@
 - Balance training and postural control
 - Jump take-off force analysis (no landing required)
 - Athlete monitoring and development
-- Low-cost biomechanical research
 
 ---
 
