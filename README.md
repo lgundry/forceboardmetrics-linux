@@ -11,8 +11,6 @@
 - Real-time force sensor data from the Wii Fit Board
 - Total force and center of pressure (CoP) calculations
 - Jump take-off detection and force-time curve logging
-- Data export in JSON or CSV for further analysis
-- Works as a standalone Linux app on Raspberry Pi
 - Companion mobile app (Android/iOS) in development
 
 ---
@@ -29,8 +27,6 @@
 ## 📦 Hardware Requirements
 
 - Wii Fit Balance Board (Bluetooth capable). 
-- Raspberry Pi (any model with Bluetooth support)
-- Optional: Monitor, keyboard, or SSH access
 
 ---
 
