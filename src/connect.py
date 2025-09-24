@@ -1,173 +1,199 @@
-import struct
+import subprocess
+import sys
 import time
 
 import bluetooth
 
-CONTROL = 0x13
-DATA = 0x11
+from data_proc import calibrate_sensors, process_sensor_data
+
+BLUETOOTH_NAME = "Nintendo RVL-WBC-01"
+
+# Wii Balance Board Constants
+CONTINUOUS_REPORTING = 0x04
+COMMAND_LIGHT = 0x11
+COMMAND_REPORTING = 0x12
+COMMAND_REQUEST_STATUS = 0x15
+COMMAND_REGISTER = 0x16
+COMMAND_READ_REGISTER = 0x17
+
+INPUT_STATUS = 0x20
+INPUT_READ_DATA = 0x21
+EXTENSION_8BYTES = 0x32
 
 
-def find_balance_board():
-    print(">> Scanning for nearby Bluetooth devices...")
-    nearby_devices = bluetooth.discover_devices(duration=8, lookup_names=True)
-    found = False
-    for addr, name in nearby_devices:
-        print(f"Found device: {name} [{addr}]")
-        if "Nintendo" in name or "Balance Board" in name:
-            print(">> This appears to be a Balance Board!")
-            found = True
-    if not found:
-        print(
-            ">> No Balance Board found. Make sure it's in sync mode (red button pressed)."
-        )
-    return None  # Don't try to connect yet
+class BoardConnection:
+    def __init__(self, debug=False):
+        self.calibration = [[0 for j in range(4)] for i in range(3)]
+        self.calibration_requested = False
+        self.light_state = False
+        self.connected = False
+        self.sock = None
+        self.csock = None
+        self.address = None
+        self.debug = debug
 
-
-def connect_board(addr):
-    print(
-        f">> Connecting to CONTROL (0x{CONTROL:02X}) and DATA (0x{DATA:02X}) channels..."
-    )
-    ctl_sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-    ctl_sock.connect((addr, CONTROL))
-    print(">> CONTROL channel connected.")
-
-    data_sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-    data_sock.connect((addr, DATA))
-    print(">> DATA channel connected.")
-    return ctl_sock, data_sock
-
-
-def wii_init_sequence(ctl_sock, data_sock):
-    """
-    Following the exact Wii initialization sequence from the documentation.
-    """
-    print(">> Starting Wii initialization sequence...")
-
-    # Step 1: Initialize without encryption
-    print(">> Sending initialization commands...")
-    ctl_sock.send(bytes([0xF0, 0x55]))  # Standard extension init
-    time.sleep(0.1)
-    ctl_sock.send(bytes([0xFB, 0x00]))  # Disable encryption
-    time.sleep(0.1)
-
-    # Step 2: Read extension identifier (should be 0x0402)
-    print(">> Attempting to read extension ID...")
-    try:
-        data_sock.settimeout(0.1)
-        ctl_sock.send(bytes([0x00]))  # Request status
-        data = data_sock.recv(21)  # Read status report
-        print(f">> Status data: {data.hex()}")
-    except bluetooth.btcommon.BluetoothError:
-        print(">> No status data (continuing)")
-
-    # Step 3: Send calibration commands
-    print(">> Sending calibration sequence...")
-    for _ in range(3):  # Send F1 AA three times
-        ctl_sock.send(bytes([0xF1, 0xAA]))
-        time.sleep(0.1)
-
-    # Send the magic calibration sequence
-    ctl_sock.send(bytes([0xF1, 0xAA, 0xAA, 0x55, 0xAA, 0xAA, 0xAA]))
-    time.sleep(0.1)
-    ctl_sock.send(bytes([0xF1, 0xAA]))
-    time.sleep(1.0)  # Longer wait after calibration
-
-    # Step 4: Read calibration data
-    print(">> Reading calibration data...")
-    try:
-        # Request memory read from 0x20-0x3F
-        ctl_sock.send(bytes([0x17, 0x00, 0x20, 0x00, 0x20]))
-        time.sleep(0.1)
-        data_sock.settimeout(1.0)
-        calib = data_sock.recv(32)
-        if calib:
-            print(f">> Raw calibration: {calib.hex()}")
-        else:
-            print(">> No calibration data received")
-    except bluetooth.btcommon.BluetoothError as e:
-        print(f">> Error reading calibration: {e}")
-
-    print(">> Initialization complete")
-
-
-def enable_reporting(ctl_sock, retries=6):
-    print(">> Sending continuous sensor reporting (0x32)...")
-    for i in range(retries):
-        ctl_sock.send(bytes([0x52, 0x12, 0x00, 0x32]))
-        print(f">> Reporting command sent [{i+1}/{retries}]")
-        time.sleep(0.1)
-
-
-def parse_data(data):
-    """
-    Parse 0x32 report: 8 bytes for four 16-bit sensors
-    Byte order: TR, BR, TL, BL (big-endian)
-    """
-    if len(data) < 9:
-        return None
-    tr, br, tl, bl = struct.unpack(">HHHH", data[1:9])
-    total = tr + br + tl + bl
-    x = ((tr + br) - (tl + bl)) / total if total != 0 else 0
-    y = ((tl + tr) - (bl + br)) / total if total != 0 else 0
-    return total, x, y, (tl, tr, bl, br)
-
-
-if __name__ == "__main__":
-    try:
-        addr = find_balance_board()
-        if not addr:
-            print(">> Balance Board not found.")
-            exit(1)
-
-        ctl_sock, data_sock = connect_board(addr)
-        wii_init_sequence(ctl_sock, data_sock)
-        enable_reporting(ctl_sock)
-
-        print(">> Starting data reception...")
-        data_sock.settimeout(1.0)
-
-        while True:
-            try:
-                data = data_sock.recv(32)  # Read enough for a full report
-                if data and len(data) >= 8:
-                    result = parse_data(data)
-                    if result:
-                        total, x, y, sensors = result
-                        print(f"Weight: {total/100:.2f}kg, X: {x:.2f}, Y: {y:.2f}")
-                time.sleep(0.01)  # Small delay to prevent busy-waiting
-            except bluetooth.btcommon.BluetoothError as e:
-                if "timed out" not in str(e):
-                    print(f">> Error: {e}")
-                    break
-    except KeyboardInterrupt:
-        print("\n>> Shutting down...")
-    finally:
         try:
-            ctl_sock.close()
-            data_sock.close()
+            self.sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+            self.csock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+        except ValueError:
+            print("Error: Bluetooth not found")
+            sys.exit(1)
+
+    def setup_device(self, address=None):
+        """Handle device discovery and pairing"""
+        if address is None:
+            print("Discovering balance board...")
+            print("Press the red sync button on the Balance Board now")
+            devices = bluetooth.discover_devices(duration=6, lookup_names=True)
+            board_info = [
+                (addr, name) for addr, name in devices if name == BLUETOOTH_NAME
+            ]
+
+            if not board_info:
+                print("No Balance Board found.")
+                return False
+
+            address = board_info[0][0]
+            print(f"Found Balance Board at {address}")
+
+        self.address = address
+
+        print("Starting Bluetooth setup...")
+        process = subprocess.Popen(
+            ["bluetoothctl"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        def send_command(cmd):
+            process.stdin.write(cmd + "\n")
+            process.stdin.flush()
+            time.sleep(0.25)
+
+        try:
+            send_command(f"remove {address}")
+            send_command("power on")
+            send_command("agent on")
+            send_command("default-agent")
+            send_command(f"pair {address}")
+            time.sleep(0.5)
+            send_command(f"connect {address}")
+            time.sleep(0.5)
+            send_command(f"trust {address}")
+            send_command("quit")
+            process.communicate()
+            return True
+
         except Exception as e:
-            print(f">> Error during cleanup: {e}")
+            print(f"Error during setup: {e}")
+            process.terminate()
+            return False
 
-    print(">> Entering main loop: printing all raw data...")
-    try:
-        while True:
-            try:
-                data = data_sock.recv(25)
-                print(f">> Raw data: {data.hex()}")
-            except bluetooth.btcommon.BluetoothError as e:
-                print(f">> Bluetooth error during recv: {e}")
-                continue
+    def connect(self):
+        """Establish connection to the board"""
+        try:
+            self.sock.connect((self.address, 0x13))
+            self.csock.connect((self.address, 0x11))
+            self.connected = True
 
-            parsed = parse_data(data)
-            if parsed:
-                total, x, y, sensors = parsed
-                print(
-                    f">> Total: {total} | X: {x:.2f} | Y: {y:.2f} | Sensors: {sensors}"
+            # Initialize the board
+            self._send_command(["00", COMMAND_REGISTER, "04", "A4", "00", "40", "00"])
+            time.sleep(0.25)
+
+            self._send_command(
+                [COMMAND_REPORTING, CONTINUOUS_REPORTING, EXTENSION_8BYTES]
+            )
+            time.sleep(0.25)
+
+            self._request_calibration()
+            time.sleep(0.25)
+
+            self.set_light(True)
+            return True
+
+        except Exception as e:
+            print(f"\nConnection failed: {e}")
+            self.disconnect()
+            return False
+
+    def _send_command(self, data):
+        """Send command to the board"""
+        if not self.connected:
+            return
+        cmd = [0x52]
+        for item in data:
+            if isinstance(item, str):
+                cmd.append(int(item, 16))
+            else:
+                cmd.append(item)
+        self.csock.send(bytes(cmd))
+        time.sleep(0.1)
+
+    def _request_calibration(self):
+        """Request calibration data from the board"""
+        self._send_command([COMMAND_READ_REGISTER, 0x04, 0xA4, 0x00, 0x24, 0x00, 0x18])
+        self.calibration_requested = True
+
+    def set_light(self, on):
+        """Control the board's LED"""
+        val = "10" if on else "00"
+        self._send_command(["00", COMMAND_LIGHT, val])
+
+    def read_data(self):
+        """Read raw data from the board"""
+        if not self.connected:
+            return None
+
+        try:
+            self.sock.settimeout(0.01)
+            data = self.sock.recv(25)
+
+            if not data or len(data) < 2:
+                return None
+
+            data_type = data[1]
+
+            if data_type == INPUT_STATUS:
+                self._send_command(
+                    [COMMAND_REPORTING, CONTINUOUS_REPORTING, EXTENSION_8BYTES]
                 )
+            elif data_type == INPUT_READ_DATA:
+                if self.calibration_requested:
+                    packet_length = (data[4] >> 4) + 1
+                    calibrate_sensors(data[7 : 7 + packet_length], self.calibration)
+                    if packet_length < 16:
+                        self.calibration_requested = False
+            elif data_type == EXTENSION_8BYTES:
+                return process_sensor_data(data[2:12], self.calibration)
 
-            time.sleep(0.05)  # avoid flooding the board
-    except KeyboardInterrupt:
-        print(">> Exiting...")
-    finally:
-        ctl_sock.close()
-        data_sock.close()
+        except bluetooth.btcommon.BluetoothError as e:
+            if str(e) != "timed out":
+                print(f"\nBluetooth error: {e}")
+        except Exception as e:
+            print(f"\nError reading data: {e}")
+
+        return None
+
+    def disconnect(self):
+        """Close the connection"""
+        if self.connected:
+            self.sock.close()
+            self.csock.close()
+            self.connected = False
+
+    def _get_raw_data(self):
+        """Get raw sensor data for debugging"""
+        try:
+            data = self.sock.recv(25)
+            if data and len(data) > 3:
+                return {
+                    "tr": (data[0] << 8) | data[1],
+                    "br": (data[2] << 8) | data[3],
+                    "tl": (data[4] << 8) | data[5],
+                    "bl": (data[6] << 8) | data[7],
+                }
+        except Exception:
+            pass
+        return None
