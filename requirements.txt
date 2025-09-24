@@ -13,6 +13,9 @@ pathspec==0.12.1
 platformdirs==4.4.0
 pre_commit==4.3.0
 PyBluez @ git+https://github.com/pybluez/pybluez.git@82cbba8a1ebd4c1e3442dfafd8581d58c50fa39e
+PyQt6==6.9.1
+PyQt6-Qt6==6.9.2
+PyQt6_sip==13.10.2
 pyqtgraph==0.13.7
 PySide6==6.9.2
 PySide6_Addons==6.9.2
