@@ -1,46 +1,35 @@
 # ForceBoardMetrics
 
-**ForceBoardMetrics** is an open-source toolkit that transforms the Nintendo Wii Fit Balance Board into a low-cost force plate for collecting and analyzing human performance data. Designed for coaches, athletes, and sports scientists, it provides real-time force tracking, balance metrics, and jump take-off analysis — all on accessible, affordable hardware like the Raspberry Pi.
-
-> ⚠️ A more advanced custom force board is currently in development. The Wii Fit Board version serves as a low-cost, proof-of-concept platform to prototype the software, data structures, and training workflows.
+**ForceBoardMetrics** is an open-source toolkit that transforms the Nintendo Wii Fit Balance Board into a low-cost force plate for collecting and analyzing human performance data. Designed for coaches, athletes, and sports scientists, it provides real-time force tracking, balance metrics, and jump take-off analysis. 
 
 ---
 
-## 🧪 Features
+## Features
 
 - Real-time force sensor data from the Wii Fit Board
 - Total force and center of pressure (CoP) calculations
 - Jump take-off detection and force-time curve logging
-- Companion mobile app (Android/iOS) in development
 
 ---
 
-## 🏆 Use Cases
+## Hardware Requirements
 
-- Balance training and postural control
-- Jump take-off force analysis (no landing required)
-- Athlete monitoring and development
+- Wii Fit Balance Board (Bluetooth capable) or open-source bluetooth capable alternative (may require source code additions)
 
 ---
 
-## 📦 Hardware Requirements
-
-- Wii Fit Balance Board (Bluetooth capable). 
-
----
-
-## 🔧 Status
+## Status
 
 Prototype board in development. Data collection and test utilities are available. Mobile app support in progress.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-We're looking for collaborators! If you're a coach, athlete, developer, or biomechanist — we welcome your feedback and contributions.
+Collaborators are welcome! If you have any interest in building software for open-source hardware, I'd love the assistance.
 
 ---
 
-## 📄 License
+## License
 
 MIT — free for personal, academic, and commercial use.
