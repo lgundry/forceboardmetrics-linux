@@ -20,7 +20,7 @@
 
 ## Status
 
-Prototype board in development. Data collection and test utilities are available. Mobile app support in progress.
+Currently working on creating toggleable widgets for displaying data from the board
 
 ---
 
